@@ -1,9 +1,11 @@
 {
   "extends": "@tsconfig/node18/tsconfig.json",
   "compilerOptions": {
-    "module": "commonjs",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2022",
     "outDir": "dist",
-    "sourceMap": true,
+    "sourceMap": false,
     "baseUrl": ".",
     "allowUnusedLabels": false,
     "allowUnreachableCode": false,

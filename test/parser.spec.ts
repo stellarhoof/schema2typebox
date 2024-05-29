@@ -10,7 +10,7 @@ import {
   NotSchema,
   ObjectSchema,
   OneOfSchema,
-} from "../src/schema-matchers";
+} from "../src/schema-matchers.js";
 import {
   parseAllOf,
   parseAnyOf,
@@ -22,8 +22,8 @@ import {
   parseOneOf,
   parseTypeName,
   parseWithMultipleTypes,
-} from "../src/schema-to-typebox";
-import { expectEqualIgnoreFormatting } from "./util";
+} from "../src/schema-to-typebox.js";
+import { expectEqualIgnoreFormatting } from "./util/index.js";
 
 describe("parser unit tests", () => {
   describe("parseObject() - when parsing an object schema", () => {

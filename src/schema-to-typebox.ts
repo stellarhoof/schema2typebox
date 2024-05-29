@@ -1,7 +1,7 @@
 import $Refparser from "@apidevtools/json-schema-ref-parser";
-import { isBoolean } from "fp-ts/lib/boolean";
-import { isNumber } from "fp-ts/lib/number";
-import { isString } from "fp-ts/lib/string";
+import { isBoolean } from "fp-ts/lib/boolean.js";
+import { isNumber } from "fp-ts/lib/number.js";
+import { isString } from "fp-ts/lib/string.js";
 import {
   JSONSchema7,
   JSONSchema7Definition,
@@ -28,34 +28,27 @@ import {
   isObjectSchema,
   isOneOfSchema,
   isSchemaWithMultipleTypes,
-} from "./schema-matchers";
+} from "./schema-matchers.js";
 
 type Code = string;
 
 /** Generates TypeBox code from a given JSON schema */
-export const schema2typebox = async (jsonSchema: string) => {
+export const schema2typebox = async (jsonSchema: string, id?: string) => {
   const schemaObj = JSON.parse(jsonSchema);
   const dereferencedSchema = (await $Refparser.dereference(
     schemaObj
   )) as JSONSchema7Definition;
 
-  const exportedName = createExportNameForSchema(dereferencedSchema);
   // Ensuring that generated typebox code will contain an '$id' field.
   // see: https://github.com/xddq/schema2typebox/issues/32
   if (
+    id &&
     typeof dereferencedSchema !== "boolean" &&
     dereferencedSchema.$id === undefined
   ) {
-    dereferencedSchema.$id = exportedName;
+    dereferencedSchema.$id = id;
   }
-  const typeBoxType = collect(dereferencedSchema);
-  const exportedType = createExportedTypeForName(exportedName);
-
-  return `${createImportStatements()}
-
-${typeBoxType.includes("OneOf([") ? createOneOfTypeboxSupportCode() : ""}
-${exportedType}
-export const ${exportedName} = ${typeBoxType}`;
+  return collect(dereferencedSchema);
 };
 
 /**
@@ -68,12 +61,12 @@ export const collect = (schema: JSONSchema7Definition): Code => {
   // TODO: boolean schema support..?
   if (isBoolean(schema)) {
     return JSON.stringify(schema);
+  } else if (isAnyOfSchema(schema)) {
+    return parseAnyOf(schema);
   } else if (isObjectSchema(schema)) {
     return parseObject(schema);
   } else if (isEnumSchema(schema)) {
     return parseEnum(schema);
-  } else if (isAnyOfSchema(schema)) {
-    return parseAnyOf(schema);
   } else if (isAllOfSchema(schema)) {
     return parseAllOf(schema);
   } else if (isOneOfSchema(schema)) {
@@ -97,66 +90,25 @@ export const collect = (schema: JSONSchema7Definition): Code => {
 };
 
 /**
- * Creates the imports required to build the typebox code.
- * Unused imports (e.g. if we don't need to create a TypeRegistry for OneOf
- * types) are stripped in a postprocessing step.
- */
-const createImportStatements = () => {
-  return [
-    'import {Kind, SchemaOptions, Static, TSchema, TUnion, Type, TypeRegistry} from "@sinclair/typebox"',
-    'import { Value } from "@sinclair/typebox/value";',
-  ].join("\n");
-};
-
-const createExportNameForSchema = (schema: JSONSchema7Definition) => {
-  if (isBoolean(schema)) {
-    return "T";
-  }
-  return schema["title"] ?? "T";
-};
-
-/**
  * Creates custom typebox code to support the JSON schema keyword 'oneOf'. Based
  * on the suggestion here: https://github.com/xddq/schema2typebox/issues/16#issuecomment-1603731886
  */
 export const createOneOfTypeboxSupportCode = (): Code => {
   return [
     "TypeRegistry.Set('ExtendedOneOf', (schema: any, value) => 1 === schema.oneOf.reduce((acc: number, schema: any) => acc + (Value.Check(schema, value) ? 1 : 0), 0))",
-    "const OneOf = <T extends TSchema[]>(oneOf: [...T], options: SchemaOptions = {}) => Type.Unsafe<Static<TUnion<T>>>({ ...options, [Kind]: 'ExtendedOneOf', oneOf })",
+    "const OneOf = <T extends TSchema[]>(oneOf: [...T], options: SchemaOptions = {}) => t.Unsafe<Static<TUnion<T>>>({ ...options, [Kind]: 'ExtendedOneOf', oneOf })",
   ].reduce((acc, curr) => {
     return acc + curr + "\n\n";
   }, "");
 };
 
-/**
- * @throws Error
- */
-const createExportedTypeForName = (exportedName: string) => {
-  if (exportedName.length === 0) {
-    throw new Error("Can't create exported type for a name with length 0.");
-  }
-  const typeName = `${exportedName.charAt(0).toUpperCase()}${exportedName.slice(
-    1
-  )}`;
-  return `export type ${typeName} = Static<typeof ${exportedName}>`;
-};
-
-const addOptionalModifier = (
-  code: Code,
-  propertyName: string,
-  requiredProperties: JSONSchema7["required"]
-) => {
-  return requiredProperties?.includes(propertyName)
-    ? code
-    : `Type.Optional(${code})`;
-};
-
 export const parseObject = (schema: ObjectSchema) => {
   const schemaOptions = parseSchemaOptions(schema);
   const properties = schema.properties;
-  const requiredProperties = schema.required;
   if (properties === undefined) {
-    return `Type.Unknown()`;
+    return schemaOptions === undefined
+      ? `t.Object({})`
+      : `t.Object({}, ${schemaOptions})`;
   }
   const attributes = Object.entries(properties);
   // NOTE: Just always quote the propertyName here to make sure we don't run
@@ -167,26 +119,27 @@ export const parseObject = (schema: ObjectSchema) => {
   // output without any unnecessarily quotes attributes.
   const code = attributes
     .map(([propertyName, schema]) => {
-      return `"${propertyName}": ${addOptionalModifier(
-        collect(schema),
-        propertyName,
-        requiredProperties
-      )}`;
+      return `"${propertyName}": ${collect(schema)}`;
     })
     .join(",\n");
+  if (!schema.required || schema.required.length === 0) {
+    return schemaOptions === undefined
+      ? `t.Object({${code}})`
+      : `t.Object({${code}}, ${schemaOptions})`;
+  }
+  const required = JSON.stringify(schema.required);
   return schemaOptions === undefined
-    ? `Type.Object({${code}})`
-    : `Type.Object({${code}}, ${schemaOptions})`;
+    ? `t.Required(${required}, t.Object({${code}}))`
+    : `t.Required(${required}, t.Object({${code}}, ${schemaOptions}))`;
 };
 
 export const parseEnum = (schema: EnumSchema) => {
   const schemaOptions = parseSchemaOptions(schema);
-  const code = schema.enum.reduce<string>((acc, schema) => {
-    return acc + `${acc === "" ? "" : ","} ${parseType(schema)}`;
-  }, "");
+  const type = schema.type === "string" ? "t.StringEnum" : "t.NumberEnum";
+  const values = JSON.stringify(schema.enum);
   return schemaOptions === undefined
-    ? `Type.Union([${code}])`
-    : `Type.Union([${code}], ${schemaOptions})`;
+    ? `${type}(${values})`
+    : `${type}(${values}, ${schemaOptions})`;
 };
 
 export const parseConst = (schema: ConstSchema): Code => {
@@ -196,48 +149,64 @@ export const parseConst = (schema: ConstSchema): Code => {
       return acc + `${acc === "" ? "" : ",\n"} ${parseType(schema)}`;
     }, "");
     return schemaOptions === undefined
-      ? `Type.Union([${code}])`
-      : `Type.Union([${code}], ${schemaOptions})`;
+      ? `t.Union([${code}])`
+      : `t.Union([${code}], ${schemaOptions})`;
   }
   // TODO: case where const is object..?
   if (typeof schema.const === "object") {
-    return "Type.Todo(const with object)";
+    return "t.Todo(const with object)";
   }
   if (typeof schema.const === "string") {
     return schemaOptions === undefined
-      ? `Type.Literal("${schema.const}")`
-      : `Type.Literal("${schema.const}", ${schemaOptions})`;
+      ? `t.Literal("${schema.const}")`
+      : `t.Literal("${schema.const}", ${schemaOptions})`;
   }
   return schemaOptions === undefined
-    ? `Type.Literal(${schema.const})`
-    : `Type.Literal(${schema.const}, ${schemaOptions})`;
+    ? `t.Literal(${schema.const})`
+    : `t.Literal(${schema.const}, ${schemaOptions})`;
 };
 
 export const parseType = (type: JSONSchema7Type): Code => {
   if (isString(type)) {
-    return `Type.Literal("${type}")`;
+    return `t.Literal("${type}")`;
   } else if (isNullType(type)) {
-    return `Type.Null()`;
+    return `t.Null()`;
   } else if (isNumber(type) || isBoolean(type)) {
-    return `Type.Literal(${type})`;
+    return `t.Literal(${type})`;
   } else if (Array.isArray(type)) {
-    return `Type.Array([${type.map(parseType)}])`;
+    return `t.Array([${type.map(parseType)}])`;
   } else {
     const code = Object.entries(type).reduce<string>((acc, [key, value]) => {
       return acc + `${acc === "" ? "" : ",\n"}${key}: ${parseType(value)}`;
     }, "");
-    return `Type.Object({${code}})`;
+    return `t.Object({${code}})`;
   }
 };
 
 export const parseAnyOf = (schema: AnyOfSchema): Code => {
   const schemaOptions = parseSchemaOptions(schema);
-  const code = schema.anyOf.reduce<string>((acc, schema) => {
+  if (
+    Array.isArray(schema.type) &&
+    schema.type.length === 2 &&
+    schema.type.includes("null")
+  ) {
+    const code = collect(
+      // @ts-expect-error: ignore
+      schema.anyOf.find((schema) => {
+        // @ts-expect-error: ignore
+        return schema.type !== "null";
+      })
+    );
+    return schemaOptions === undefined
+      ? `t.Nullable(${code})`
+      : `t.Nullable(${code}, ${schemaOptions})`;
+  }
+  const code = schema.anyOf.reduce((acc, schema) => {
     return acc + `${acc === "" ? "" : ",\n"} ${collect(schema)}`;
   }, "");
   return schemaOptions === undefined
-    ? `Type.Union([${code}])`
-    : `Type.Union([${code}], ${schemaOptions})`;
+    ? `t.Union([${code}])`
+    : `t.Union([${code}], ${schemaOptions})`;
 };
 
 export const parseAllOf = (schema: AllOfSchema): Code => {
@@ -246,8 +215,8 @@ export const parseAllOf = (schema: AllOfSchema): Code => {
     return acc + `${acc === "" ? "" : ",\n"} ${collect(schema)}`;
   }, "");
   return schemaOptions === undefined
-    ? `Type.Intersect([${code}])`
-    : `Type.Intersect([${code}], ${schemaOptions})`;
+    ? `t.Intersect([${code}])`
+    : `t.Intersect([${code}], ${schemaOptions})`;
 };
 
 export const parseOneOf = (schema: OneOfSchema): Code => {
@@ -263,8 +232,8 @@ export const parseOneOf = (schema: OneOfSchema): Code => {
 export const parseNot = (schema: NotSchema): Code => {
   const schemaOptions = parseSchemaOptions(schema);
   return schemaOptions === undefined
-    ? `Type.Not(${collect(schema.not)})`
-    : `Type.Not(${collect(schema.not)}, ${schemaOptions})`;
+    ? `t.Not(${collect(schema.not)})`
+    : `t.Not(${collect(schema.not)}, ${schemaOptions})`;
 };
 
 export const parseArray = (schema: ArraySchema): Code => {
@@ -274,13 +243,13 @@ export const parseArray = (schema: ArraySchema): Code => {
       return acc + `${acc === "" ? "" : ",\n"} ${collect(schema)}`;
     }, "");
     return schemaOptions === undefined
-      ? `Type.Array(Type.Union(${code}))`
-      : `Type.Array(Type.Union(${code}),${schemaOptions})`;
+      ? `t.Array(t.Union(${code}))`
+      : `t.Array(t.Union(${code}),${schemaOptions})`;
   }
-  const itemsType = schema.items ? collect(schema.items) : "Type.Unknown()";
+  const itemsType = schema.items ? collect(schema.items) : "t.Unknown()";
   return schemaOptions === undefined
-    ? `Type.Array(${itemsType})`
-    : `Type.Array(${itemsType},${schemaOptions})`;
+    ? `t.Array(${itemsType})`
+    : `t.Array(${itemsType},${schemaOptions})`;
 };
 
 export const parseWithMultipleTypes = (schema: MultipleTypesSchema): Code => {
@@ -289,7 +258,7 @@ export const parseWithMultipleTypes = (schema: MultipleTypesSchema): Code => {
       acc + `${acc === "" ? "" : ",\n"} ${parseTypeName(typeName, schema)}`
     );
   }, "");
-  return `Type.Union([${code}])`;
+  return `t.Union([${code}])`;
 };
 
 export const parseTypeName = (
@@ -299,26 +268,46 @@ export const parseTypeName = (
   const schemaOptions = parseSchemaOptions(schema);
   if (type === "number" || type === "integer") {
     return schemaOptions === undefined
-      ? "Type.Number()"
-      : `Type.Number(${schemaOptions})`;
+      ? "t.Number()"
+      : `t.Number(${schemaOptions})`;
   } else if (type === "string") {
     return schemaOptions === undefined
-      ? "Type.String()"
-      : `Type.String(${schemaOptions})`;
+      ? "t.String()"
+      : `t.String(${schemaOptions})`;
   } else if (type === "boolean") {
     return schemaOptions === undefined
-      ? "Type.Boolean()"
-      : `Type.Boolean(${schemaOptions})`;
+      ? "t.Boolean()"
+      : `t.Boolean(${schemaOptions})`;
   } else if (type === "null") {
     return schemaOptions === undefined
-      ? "Type.Null()"
-      : `Type.Null(${schemaOptions})`;
+      ? "t.Null()"
+      : `t.Null(${schemaOptions})`;
   } else if (type === "object") {
     return parseObject(schema as ObjectSchema);
     // We don't want to trust on build time checking here, json can contain anything
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   } else if (type === "array") {
     return parseArray(schema as ArraySchema);
+  } else if (type === "objectId") {
+    return schemaOptions === undefined
+      ? "t.ObjectId()"
+      : `t.ObjectId(${schemaOptions})`;
+  } else if (type === "date") {
+    return schemaOptions === undefined
+      ? "t.Date()"
+      : `t.Date(${schemaOptions})`;
+  } else if (type === "double") {
+    return schemaOptions === undefined
+      ? "t.Double()"
+      : `t.Double(${schemaOptions})`;
+  } else if (type === "decimal") {
+    return schemaOptions === undefined
+      ? "t.Number()"
+      : `t.Number(${schemaOptions})`;
+  } else if (type === "bool") {
+    return schemaOptions === undefined
+      ? "t.Boolean()"
+      : `t.Boolean(${schemaOptions})`;
   }
   throw new Error(`Should never happen..? parseType got type: ${type}`);
 };
@@ -328,7 +317,6 @@ const parseSchemaOptions = (schema: JSONSchema7): Code | undefined => {
     return (
       // NOTE: To be fair, not sure if we should filter out the title. If this
       // makes problems one day, think about not filtering it.
-      key !== "title" &&
       key !== "type" &&
       key !== "items" &&
       key !== "allOf" &&

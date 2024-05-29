@@ -92,7 +92,6 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
-dist
 
 # Gatsby files
 .cache/
@@ -134,7 +133,6 @@ dist
 
 # custom added ignores below
 bundle
-dist
 node_modules
 TODO*
 /schema.json

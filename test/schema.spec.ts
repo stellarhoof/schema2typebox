@@ -1,7 +1,10 @@
 import { describe, test } from "@jest/globals";
 import { readFileSync } from "node:fs";
-import { schema2typebox } from "../src/index";
-import { buildOsIndependentPath, expectEqualIgnoreFormatting } from "./util";
+import { schema2typebox } from "../src/index.js";
+import {
+  buildOsIndependentPath,
+  expectEqualIgnoreFormatting,
+} from "./util/index.js";
 
 describe("when testing against real world schemas", () => {
   test("works for schema.org - dayOfWeek", async () => {

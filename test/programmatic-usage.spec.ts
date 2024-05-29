@@ -6,8 +6,11 @@ import shell from "shelljs";
 import {
   addCommentThatCodeIsGenerated,
   schema2typebox,
-} from "../src/programmatic-usage";
-import { buildOsIndependentPath, expectEqualIgnoreFormatting } from "./util";
+} from "../src/programmatic-usage.js";
+import {
+  buildOsIndependentPath,
+  expectEqualIgnoreFormatting,
+} from "./util/index.js";
 
 const SHELLJS_RETURN_CODE_OK = 0;
 

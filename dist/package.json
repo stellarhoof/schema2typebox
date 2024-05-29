@@ -1,0 +1,78 @@
+{
+    "name": "schema2typebox",
+    "type": "module",
+    "version": "1.7.4",
+    "main": "dist/src/index.js",
+    "description": "Creates typebox code from JSON schemas",
+    "source": "dist/src/index.js",
+    "typings": "dist/src/index.d.ts",
+    "bin": {
+        "schema-to-typebox": "dist/src/cli/index.js",
+        "schema2typebox": "dist/src/cli/index.js"
+    },
+    "author": "Pierre Dahmani <hi@pierre-dev.com>",
+    "license": "MIT",
+    "scripts": {
+        "compile": "tsc",
+        "compile:watch": "tsc -w",
+        "dev": "nodemon --watch src --watch test --ext ts,json --exec 'yarn compile && yarn start'",
+        "format": "prettier . --write",
+        "format:check": "prettier . --check",
+        "lint": "eslint . --fix",
+        "lint:check": "eslint .",
+        "start": "node --enable-source-maps ./dist/src/index.js",
+        "test": "jest --runInBand .",
+        "release": "rm -r dist && yarn compile && npm publish"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/xddq/schema2typebox.git"
+    },
+    "keywords": [
+        "JSON schema",
+        "schema2typebox",
+        "schema-to-typebox",
+        "schema",
+        "typescript",
+        "typebox",
+        "ts",
+        "validate",
+        "parse",
+        "validation",
+        "parsing",
+        "IO",
+        "cli"
+    ],
+    "dependencies": {
+        "@apidevtools/json-schema-ref-parser": "9.0.9",
+        "@sinclair/typebox": "0.30.2",
+        "cosmiconfig": "8.1.3",
+        "fp-ts": "2.16.0",
+        "minimist": "1.2.8",
+        "prettier": "2.8.8",
+        "prettier-plugin-organize-imports": "3.2.2",
+        "typescript": "5.0.4"
+    },
+    "devDependencies": {
+        "@babel/core": "7.24.5",
+        "@babel/preset-env": "7.24.5",
+        "@babel/preset-typescript": "7.24.1",
+        "@jest/globals": "29.7.0",
+        "@tsconfig/node18": "2.0.0",
+        "@types/jest": "29.5.12",
+        "@types/minimist": "1.2.2",
+        "@types/node": "18.16.8",
+        "@types/nodemon": "1.19.2",
+        "@types/prettier": "2.7.2",
+        "@types/shelljs": "0.8.12",
+        "@typescript-eslint/eslint-plugin": "5.59.6",
+        "@typescript-eslint/parser": "5.59.6",
+        "concurrently": "7.6.0",
+        "eslint": "8.40.0",
+        "eslint-config-prettier": "8.8.0",
+        "jest": "29.7.0",
+        "nodemon": "2.0.22",
+        "shelljs": "0.8.5"
+    },
+    "packageManager": "yarn@3.5.1"
+}
